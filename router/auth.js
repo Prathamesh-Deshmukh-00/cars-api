@@ -4,9 +4,10 @@ require('../db/db_connection');
 http = require('http');
 const user = require('../model/userSchema');
 const cars = require('../model/carSchema');
-
-
-
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs'); 
+const UserVerify = require('../middleware/UserVerify');
+const AdminVerify = require('../middleware/AdminVerify');
 
 router.get('/',(req,res) =>{
     try{
@@ -134,6 +135,10 @@ router.post('/adduser', async (req, res) => {
         if (!name || !username || !password || !role) {
             return res.status(400).json({ error: 'All fields are required' });
         }
+        let cur_user = await user.findOne({ username:username });
+        if (cur_user) {
+        return res.status(400).json({ msg: 'User already exists' });
+        }
         const newUser = new user({
             name,
             username,
@@ -147,12 +152,58 @@ router.post('/adduser', async (req, res) => {
             id: savedUser._id,
             name: savedUser.name,
             username: savedUser.username,
-            role: savedUser.role
+            role: savedUser.role,
+            tokens: savedUser.tokens
         });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Server error while adding user' });
     }
 });
+
+
+router.post('/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Username and password are required' });
+        }
+
+        const user_ = await user.findOne({ username });
+        if (!user_) {
+            return res.status(400).json({ error: 'Invalid credentials' });
+        }
+
+        const isMatch = await bcrypt.compare(password, user_.password);
+        if (!isMatch) {
+            return res.status(400).json({ error: 'Invalid credentials' });
+        }
+
+        const token = await user_.generateAuthToken();
+
+        res.cookie('authToken', token, {
+            httpOnly: true, 
+            maxAge: 24 * 60 * 60 * 1000 
+        });
+
+        res.status(200).json({ message: 'Logged in successfully' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Server error while logging in' });
+    }
+});
+
+
+router.get('/userverify',UserVerify,(req,res)=>{
+    res.status(200).json({"message":"User Verified"});
+})
+
+
+router.get('/adminverify',AdminVerify,(req,res)=>{
+    res.status(200).json({"message":"Admin Verified"});
+})
+
+
 
 module.exports = router;
